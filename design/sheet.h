@@ -4,6 +4,7 @@
 #include "common.h"
 
 #include <functional>
+#include <unordered_map>
 
 class Sheet : public SheetInterface {
 public:
@@ -11,24 +12,26 @@ public:
 
     void SetCell(Position pos, std::string text) override;
 
-    const CellInterface* GetCell(Position pos) const override;
-    CellInterface* GetCell(Position pos) override;
+    const Cell* GetCell(Position pos) const override;
+    Cell* GetCell(Position pos) override;
 
     void ClearCell(Position pos) override;
-
+ 
     Size GetPrintableSize() const override;
 
     void PrintValues(std::ostream& output) const override;
     void PrintTexts(std::ostream& output) const override;
 
-    const Cell* GetConcreteCell(Position pos) const;
-    Cell* GetConcreteCell(Position pos);
-
 private:
-    void MaybeIncreaseSizeToIncludePosition(Position pos);
-    void PrintCells(std::ostream& output,
-                    const std::function<void(const CellInterface&)>& printCell) const;
-    Size GetActualSize() const;
+    class HashPosition{
+    public:
+        int operator()(const Position& pos) const{
+            return pos.col + pos.row * (Position::MAX_COLS + 1);
+        }
+    };
 
-    std::vector<std::vector<std::unique_ptr<Cell>>> cells_;
+	std::unordered_map<Position, Cell, HashPosition> sheet_;
+    Size printable_size = {0, 0};
+    std::unordered_map<size_t, int> count_rows;
+    std::unordered_map<size_t, int> count_cols;
 };

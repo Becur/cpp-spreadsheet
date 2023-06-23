@@ -9,8 +9,12 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <functional>
+#include <cfloat>
 
 namespace ASTImpl {
+
+static const double ERROR_RATE = 1e-10;
 
 enum ExprPrecedence {
     EP_ADD,
@@ -72,7 +76,7 @@ public:
     virtual ~Expr() = default;
     virtual void Print(std::ostream& out) const = 0;
     virtual void DoPrintFormula(std::ostream& out, ExprPrecedence precedence) const = 0;
-    virtual double Evaluate(/*добавьте сюда нужные аргументы*/ args) const = 0;
+    virtual double Evaluate(std::function<FormulaInterface::Value(const Position)> get_value_cell) const = 0;
 
     // higher is tighter
     virtual ExprPrecedence GetPrecedence() const = 0;
@@ -142,8 +146,54 @@ public:
         }
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/) const override {
-			// Скопируйте ваше решение из предыдущих уроков.
+    double Evaluate(std::function<FormulaInterface::Value(const Position)> get_value_cell) const override {
+        switch (type_) {
+            case Add:
+            {
+                double lhs = lhs_->Evaluate(get_value_cell);
+                double rhs = rhs_->Evaluate(get_value_cell);
+                if(((lhs >= 0) && (rhs <= DBL_MAX - lhs)) || ((lhs < 0) && (rhs > -DBL_MAX - lhs))){
+                    return lhs + rhs;
+                }
+                else{
+                    throw FormulaError(FormulaError::Category::Div0);
+                }
+            }
+            case Subtract:
+            {
+                double lhs = lhs_->Evaluate(get_value_cell);
+                double rhs = rhs_->Evaluate(get_value_cell);
+                if(((lhs >= 0) && (-rhs <= DBL_MAX - lhs)) || ((lhs < 0) && (-rhs > -DBL_MAX - lhs))){
+                    return lhs - rhs;
+                }
+                else{
+                    throw FormulaError(FormulaError::Category::Div0);
+                }
+            }
+            case Multiply:
+            {
+                double lhs = lhs_->Evaluate(get_value_cell);
+                double rhs = rhs_->Evaluate(get_value_cell);
+                if(DBL_MAX / std::abs(lhs) >= std::abs(rhs)){
+                    return lhs * rhs;
+                }
+                else{
+                    throw FormulaError(FormulaError::Category::Div0);
+                }
+            }
+            case Divide:
+            {
+                const double divider = rhs_->Evaluate(get_value_cell);
+                if((divider < ERROR_RATE) && (divider > -ERROR_RATE)){
+                    throw FormulaError(FormulaError::Category::Div0);
+                }
+                return lhs_->Evaluate(get_value_cell) / divider;
+            }
+            default:
+                // have to do this because VC++ has a buggy warning
+                assert(false);
+                return static_cast<double>(INT_MAX);
+        }
     }
 
 private:
@@ -180,8 +230,17 @@ public:
         return EP_UNARY;
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/ args) const override {
-        // Скопируйте ваше решение из предыдущих уроков.
+    double Evaluate(std::function<FormulaInterface::Value(const Position)> get_value_cell) const override {
+        switch (type_) {
+            case UnaryPlus:
+                return operand_->Evaluate(get_value_cell);
+            case UnaryMinus:
+                return -operand_->Evaluate(get_value_cell);
+            default:
+                // have to do this because VC++ has a buggy warning
+                assert(false);
+                return static_cast<double>(INT_MAX);
+        }
     }
 
 private:
@@ -211,8 +270,14 @@ public:
         return EP_ATOM;
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/ args) const override {
-        // реализуйте метод.
+    double Evaluate(std::function<FormulaInterface::Value(const Position)> get_value_cell) const override {
+        auto res = get_value_cell(*cell_);
+        if(std::holds_alternative<FormulaError>(res)){
+            throw std::get<FormulaError>(res);
+        }
+        else{
+            return std::get<double>(res);
+        }
     }
 
 private:
@@ -237,7 +302,7 @@ public:
         return EP_ATOM;
     }
 
-    double Evaluate(/*добавьте нужные аргументы*/ args) const override {
+    double Evaluate(std::function<FormulaInterface::Value(const Position)>) const override {
         return value_;
     }
 
@@ -357,6 +422,7 @@ FormulaAST ParseFormulaAST(std::istream& in) {
     ASTImpl::BailErrorListener error_listener;
     lexer.removeErrorListeners();
     lexer.addErrorListener(&error_listener);
+    
 
     CommonTokenStream tokens(&lexer);
 
@@ -391,8 +457,8 @@ void FormulaAST::PrintFormula(std::ostream& out) const {
     root_expr_->PrintFormula(out, ASTImpl::EP_ATOM);
 }
 
-double FormulaAST::Execute(/*добавьте нужные аргументы*/ args) const {
-    return root_expr_->Evaluate(/*добавьте нужные аргументы*/ args);
+double FormulaAST::Execute(std::function<FormulaInterface::Value(const Position)> get_value_cell) const {
+    return root_expr_->Evaluate(get_value_cell);
 }
 
 FormulaAST::FormulaAST(std::unique_ptr<ASTImpl::Expr> root_expr, std::forward_list<Position> cells)

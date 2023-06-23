@@ -37,9 +37,9 @@ struct Size {
 class FormulaError {
 public:
     enum class Category {
-        Ref,    // ссылка на ячейку с некорректной позицией
-        Value,  // ячейка не может быть трактована как число
-        Div0,  // в результате вычисления возникло деление на ноль
+        Ref = 0,    // ссылка на ячейку с некорректной позицией
+        Value = 1,  // ячейка не может быть трактована как число
+        Div0 = 2,  // в результате вычисления возникло деление на ноль
     };
 
     FormulaError(Category category);
@@ -52,6 +52,8 @@ public:
 
 private:
     Category category_;
+
+    static inline const std::vector<std::string> category_message = {"#REF!", "#VALUE!", "#DIV/0!"};
 };
 
 std::ostream& operator<<(std::ostream& output, FormulaError fe);
@@ -97,6 +99,10 @@ public:
     // формуле. Список отсортирован по возрастанию и не содержит повторяющихся
     // ячеек. В случае текстовой ячейки список пуст.
     virtual std::vector<Position> GetReferencedCells() const = 0;
+
+    virtual void ResetCashe() const = 0;
+    virtual bool IsCycleSearch(const Position find_pos, const Position parent_pos) const = 0;
+    virtual void DeleteParent(const Position par_pos) = 0;
 };
 
 inline constexpr char FORMULA_SIGN = '=';
